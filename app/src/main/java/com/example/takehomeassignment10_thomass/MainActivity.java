@@ -39,7 +39,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
 
     public static final String ANONYMOUS = "anonymous";
-    public static final int DEFAULT_MSG_LENGTH_LIMIT = 240; //limit
+    public static final int DEFAULT_MSG_LENGTH_LIMIT = 240; //limitprivate static final int RC_PHOTO_PICKER =  2;
+
 
     public static final int RC_SIGN_IN = 1; // Request Code
 
@@ -93,9 +94,12 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View view) {
                 // TODO: Fire an intent to show an image picker
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.setType("image/jpeg");
+                intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
+                startActivityForResult(Intent.createChooser(intent, "Complete action using"), RC_PHOTO_PICKER);
             }
         });
-
         // Enable Send button when there's text to send
         mMessageEditText.addTextChangedListener(new TextWatcher() { //cannot send an empty message!
             @Override
@@ -181,6 +185,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
+
     private void onSignedInIntitialized(String username) {
         mUsername = username; //variable linked to the sendBUtton method onClick
         //sets username
@@ -241,6 +246,8 @@ public class MainActivity extends AppCompatActivity {
 
         }
     }
+
+
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
