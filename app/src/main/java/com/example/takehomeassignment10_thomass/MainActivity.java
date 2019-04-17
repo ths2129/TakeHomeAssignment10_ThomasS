@@ -2,6 +2,7 @@ package com.example.takehomeassignment10_thomass;
 
 
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -21,6 +22,10 @@ import android.widget.ProgressBar;
 import android.widget.Toast;
 
 import com.firebase.ui.auth.AuthUI;
+import com.firebase.ui.auth.data.model.User;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
@@ -29,17 +34,29 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings;
+import com.google.firebase.storage.FirebaseStorage;
+import com.google.firebase.storage.StorageReference;
+import com.google.firebase.storage.UploadTask;
 
+
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
 
     public static final String ANONYMOUS = "anonymous";
-    public static final int DEFAULT_MSG_LENGTH_LIMIT = 240; //limitprivate static final int RC_PHOTO_PICKER =  2;
+    public static final int DEFAULT_MSG_LENGTH_LIMIT = 130; //limit
+    private static final int RC_PHOTO_PICKER = 2;
+    private static final String FRIENDLY_MSG_LENGTH_KEY = "friendly_msg_length"; //connects to reconfig
 
 
     public static final int RC_SIGN_IN = 1; // Request Code
@@ -59,18 +76,27 @@ public class MainActivity extends AppCompatActivity {
     private FirebaseDatabase mFireBaseDatabase; //entry point for app and database
     private DatabaseReference mMessagesDataBaseReference; //class that references the messages portion
     private ChildEventListener mChildEventListener;
+    private FirebaseStorage mFireBaseStorage; // needs getinstance
+    private StorageReference mChatPhotoStorageReference;
+    private FirebaseRemoteConfig mFirebaseRemoteConfig; //isn't accepting this object???
+    private FirebaseRemoteConfigSettings mFirebaseSettings;
+    private HashMap<String, Object> configDefault;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-
         mUsername = ANONYMOUS;
         mAuth = FirebaseAuth.getInstance();
+        mFireBaseStorage = FirebaseStorage.getInstance();
         mFireBaseDatabase = FirebaseDatabase.getInstance();// access point - instantianted
-        mMessagesDataBaseReference = mFireBaseDatabase.getReference().child("messages");
+        mFirebaseRemoteConfig = FirebaseRemoteConfig.getInstance();
+        mMessagesDataBaseReference = mFireBaseDatabase.getReference().child("messages"); //initialized to this location
+        mChatPhotoStorageReference = mFireBaseStorage.getReference().child("chat_photos");
         mMessageEditText = (EditText) findViewById(R.id.messageEditText);
+
+        fetchConfig();
 
         final FriendlyMessage friendlyMessage = new FriendlyMessage(mMessageEditText.getText().toString(), mUsername, null);
 // reference to root and messages portion of database
@@ -143,7 +169,7 @@ public class MainActivity extends AppCompatActivity {
                 if (user != null) { //user logged in?
                     //user is signedin and Toast helps user know
                     //Toast.makeText(MainActivity.this, "You're now signed in. Welcome to FriendlyChat.", Toast.LENGTH_SHORT).show();
-                    onSignedInIntitialized(user.getDisplayName());//pass in username into helper emthod
+                    onSignedIntitialized(user.getDisplayName());//pass in username into helper emthod
                 } else { // signed out?
                     onSignedOutCleanup();
                     //user is signed out
@@ -166,27 +192,111 @@ public class MainActivity extends AppCompatActivity {
             }
 
             ;
-
         };
+
+//
+        /// public FirebaseRemoteConfigSettings getConfigSettings() {
+        // return configSettings;
+        configDefault = new HashMap<>();
+        configDefault.put(FRIENDLY_MSG_LENGTH_KEY, DEFAULT_MSG_LENGTH_LIMIT);
+        mFirebaseRemoteConfig.setDefaults(configDefault); //set up remote config
+        mFirebaseRemoteConfig.fetch(0);//fetchConfig();
+
+        FirebaseRemoteConfigSettings configSettings = new FirebaseRemoteConfigSettings.Builder() //enable devloper mode with remote config
+                .setDeveloperModeEnabled(BuildConfig.DEBUG)
+                .build();
+        mFirebaseRemoteConfig.setConfigSettings(configSettings);
+        //return configSettings;
+
+        //define parameters
+
     }
 
+    // Fetch the config to determine the allowed length of messages.
+    public void fetchConfig() {
+        long cacheExpiration; // 1 hour in seconds
+        // If developer mode is enabled reduce cacheExpiration to 0 so that
+        //each fetch goes to the server. This should not be used in release builds.
+        if (mFirebaseRemoteConfig.getInfo().getConfigSettings()
+                .isDeveloperModeEnabled()) { //latest values fro, firebase
+            cacheExpiration = 0;
+
+            // this helps with debugging?
+
+            mFirebaseRemoteConfig.fetch(cacheExpiration) //return values
+                    .addOnSuccessListener(new OnSuccessListener<Void>() {
+                        @Override
+                        public void onSuccess(Void aVoid) {  //friendly message length below
+                            // Make the fetched config available
+                            // via FirebaseRemoteConfig get<type> calls, e.g., getLong, getString.
+                            mFirebaseRemoteConfig.fetch();
+
+
+                            // Update the EditText length limit with
+                            // the newly retrieved values from Remote Config.
+                            applyRetrievedLengthLimit();
+                        }
+                    })
+                    .addOnFailureListener(new OnFailureListener() {
+                        @Override
+                        public void onFailure(@NonNull Exception e) {
+                            // An error occurred when fetching the config.
+
+                            // Update the EditText length limit with
+                            // the newly retrieved values from Remote Config.
+                            applyRetrievedLengthLimit(); //Offline
+                        }
+                    });
+        }
+    }
+
+    /**
+     * Apply retrieved length limit to edit text field. This result may be fresh from the server or it may be from
+     * cached values.
+     */
+
+    private void applyRetrievedLengthLimit() { //this updates text length
+        Long friendly_msg_length = mFirebaseRemoteConfig.getLong(FRIENDLY_MSG_LENGTH_KEY);
+        mMessageEditText.setFilters(new InputFilter[]{new InputFilter.LengthFilter(friendly_msg_length.intValue())});
+    }
 
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
         if (requestCode == RC_SIGN_IN) {
-            if (requestCode == RESULT_OK) { //sings in user
+            if (resultCode == RESULT_OK) { //sings in user
+                Toast.makeText(this, "Signed in", Toast.LENGTH_SHORT).show();
+
             } else if (resultCode == RESULT_CANCELED) { //user cancelled
                 finish();
-            }
 
+                //file name
+            } else if (requestCode == RC_PHOTO_PICKER && requestCode == RESULT_OK) {
+                Uri selectedImageUri = data.getData();
+
+                final StorageReference photoRef = mChatPhotoStorageReference.child((selectedImageUri.getLastPathSegment())); //made a child in the storage reference - named after the last part of segment
+                photoRef.putFile(selectedImageUri).addOnSuccessListener(this, new OnSuccessListener<UploadTask.TaskSnapshot>() {
+                    @Override
+                    public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
+                        //When the image has successfully uploaded, get its download URL
+                        photoRef.getDownloadUrl().addOnSuccessListener(new OnSuccessListener<Uri>() {
+                            @Override
+                            public void onSuccess(Uri uri) {
+                                Uri Uri = uri;
+                                FriendlyMessage friendlyMessage = new FriendlyMessage(null, mUsername, Uri.toString());
+                                mMessagesDataBaseReference.push().setValue(friendlyMessage);
+                            }
+                        });
+                    }//saved selected image in storage
+                });
+
+            }
         }
-        ;
     }
 
 
-
-    private void onSignedInIntitialized(String username) {
+    private void onSignedIntitialized(String username) {
         mUsername = username; //variable linked to the sendBUtton method onClick
         //sets username
         attachDatabaseReadListener(); //called listeners
@@ -230,8 +340,6 @@ public class MainActivity extends AppCompatActivity {
         mMessagesDataBaseReference.addChildEventListener(mChildEventListener); // this will trigger from the listeners
     }
 
-    ;
-
 
     private void onSignedOutCleanup() {
         mUsername = ANONYMOUS; //sets back to original
@@ -246,7 +354,6 @@ public class MainActivity extends AppCompatActivity {
 
         }
     }
-
 
 
     @Override

@@ -30,8 +30,8 @@ public class MessageAdapter extends ArrayAdapter<FriendlyMessage> {
 
         FriendlyMessage message = getItem(position);
 
-        boolean isPhoto = message.getPhotoUrl() != null;
-        if (isPhoto) {
+        boolean isPhoto = message.getPhotoUrl() != null; //either or image or text
+        if (isPhoto) { // is it a photo and uses glide from depencies
             messageTextView.setVisibility(View.GONE);
             photoImageView.setVisibility(View.VISIBLE);
             Glide.with(photoImageView.getContext())
@@ -42,7 +42,7 @@ public class MessageAdapter extends ArrayAdapter<FriendlyMessage> {
             photoImageView.setVisibility(View.GONE);
             messageTextView.setText(message.getText());
         }
-        authorTextView.setText(message.getName());
+        authorTextView.setText(message.getName()); //secure location to store files!
 
         return convertView;
     }
